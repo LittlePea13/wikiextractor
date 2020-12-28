@@ -57,7 +57,8 @@ from io import StringIO
 from multiprocessing import Queue, Process, cpu_count
 from timeit import default_timer
 
-from .extract import Extractor, ignoreTag, define_template, acceptedNamespaces
+from .extract import Extractor, ignoreTag, define_template, acceptedNamespaces#, mapper
+from wikimapper import WikiMapper
 
 # ===========================================================================
 
@@ -162,21 +163,24 @@ class OutputSplitter():
 
     def reserve(self, size):
         if self.file.tell() + size > self.max_file_size:
+            self.file.write('</data>')
             self.close()
             self.file = self.open(self.nextFile.next())
-
     def write(self, data):
         self.reserve(len(data))
         self.file.write(data)
 
     def close(self):
+        # self.file.write('</data>')
         self.file.close()
 
     def open(self, filename):
         if self.compress:
             return bz2.BZ2File(filename + '.bz2', 'w')
         else:
-            return open(filename, 'w')
+            f = open(filename, 'w')
+            f.write('<data>')
+            return f
 
 
 # ----------------------------------------------------------------------
@@ -382,9 +386,11 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     for line in input:
         #line = line.decode('utf-8')
         if '<' not in line:  # faster than doing re.search()
+            if line[0:2] == '==':
+                inText = False
             if inText:
                 page.append(line)
-            continue
+            continue 
         m = tagRE.search(line)
         if not m:
             continue
@@ -405,16 +411,16 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
             if m.lastindex == 4:  # open-close
                 inText = False
         elif tag == '/text':
-            if m.group(1):
+            if m.group(1) and not m.group(1).startswith('[[') and not m.group(1).endswith(']]'):
                 page.append(m.group(1))
             inText = False
         elif inText:
             page.append(line)
         elif tag == '/page':
             colon = title.find(':')
-            if (colon < 0 or (title[:colon] in acceptedNamespaces) and id != last_id and
+            if ((colon < 0 or (title[:colon] in acceptedNamespaces)) and id != last_id and
                     not redirect and not title.startswith(templateNamespace)):
-                job = (id, title, page, ordinal)
+                job = (id, title, page, mapper, ordinal)
                 jobs_queue.put(job)  # goes to any available extract_process
                 last_id = id
                 ordinal += 1
@@ -456,9 +462,9 @@ def extract_process(jobs_queue, output_queue, escape_doc):
         job = jobs_queue.get()  # job is (id, title, page, ordinal)
         if job:
             out = StringIO()  # memory buffer
-            Extractor(*job[:3]).extract(out, escape_doc)  # (id, title, page)
+            Extractor(*job[:4]).extract(out, escape_doc)  # (id, title, page)
             text = out.getvalue()
-            output_queue.put((job[3], text))  # (ordinal, extracted_text)
+            output_queue.put((job[4], text))  # (ordinal, extracted_text)
             out.close()
         else:
             break
@@ -501,7 +507,7 @@ minFileSize = 200 * 1024
 
 
 def main():
-    global urlbase, acceptedNamespaces
+    global urlbase, acceptedNamespaces, mapper
     global expand_templates, templateCache
 
     parser = argparse.ArgumentParser(prog=os.path.basename(sys.argv[0]),
@@ -525,6 +531,8 @@ def main():
                         help="preserve links")
     groupP.add_argument("-ns", "--namespaces", default="", metavar="ns1,ns2",
                         help="accepted namespaces")
+    groupP.add_argument("-lan", "--language", default="en", metavar="lan",
+                        help="language to use")
     groupP.add_argument("--templates",
                         help="use or create file containing templates")
     groupP.add_argument("--no-templates", action="store_false",
@@ -567,6 +575,8 @@ def main():
     if args.namespaces:
         acceptedNamespaces = set(args.namespaces.split(','))
 
+    mapper = WikiMapper(f"index_{args.language}wiki-latest.db")
+
     FORMAT = '%(levelname)s: %(message)s'
     logging.basicConfig(format=FORMAT)
 
@@ -601,7 +611,7 @@ def main():
             else:
                 logging.error('Missing title element')
                 return
-            Extractor(id, title, [page]).extract(sys.stdout)
+            Extractor(id, title, [page], mapper).extract(sys.stdout)
         return
 
     output_path = args.output

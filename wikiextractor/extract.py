@@ -21,11 +21,19 @@
 import re
 import html
 from itertools import zip_longest
-import urllib
+#import urllib
 from html.entities import name2codepoint
 import logging
 import time
+import urllib.parse
+from wikimapper import WikiMapper
+#from xml.sax.saxutils import escape as escape_xml
 
+def escape_xml(text):
+    return text.replace("'", "&apos;")
+# enwiki = pd.read_csv('enwikidata.csv')
+# mappings = dict(zip(enwiki.ips_site_page.str.lower(), enwiki.ips_item_id))
+# del(enwiki)
 # ----------------------------------------------------------------------
 
 # match tail after wikilink
@@ -69,7 +77,7 @@ def get_url(uid):
 # ======================================================================
 
 
-def clean(extractor, text, expand_templates=False, escape_doc=True):
+def clean(extractor, text, title, expand_templates=False, escape_doc=True):
     """
     Transforms wiki markup. If the command line flag --escapedoc is set then the text is also escaped
     @see https://www.mediawiki.org/wiki/Help:Formatting
@@ -94,9 +102,6 @@ def clean(extractor, text, expand_templates=False, escape_doc=True):
     # replace external links
     text = replaceExternalLinks(text)
 
-    # replace internal links
-    text = replaceInternalLinks(text)
-
     # drop MagicWords behavioral switches
     text = magicWordsRE.sub('', text)
 
@@ -118,6 +123,7 @@ def clean(extractor, text, expand_templates=False, escape_doc=True):
         text = italic.sub(r'<i>\1</i>', text)
     else:
         text = bold_italic.sub(r'\1', text)
+        #text = bold.sub(fr'[[{title}|\1]]', text)
         text = bold.sub(r'\1', text)
         text = italic_quote.sub(r'"\1"', text)
         text = italic.sub(r'"\1"', text)
@@ -176,7 +182,19 @@ def clean(extractor, text, expand_templates=False, escape_doc=True):
     text = text.replace(',,', ',').replace(',.', '.')
     if escape_doc:
         text = html.escape(text, quote=False)
-    return text
+
+    text = text.lstrip()
+    def delete_image_captions(text):
+        sentences = text.split('\n')
+        if sentences[0].startswith('[[') and sentences[0].endswith(']]'):
+            text = '\n'.join(sentences[1:])
+            return delete_image_captions(text)
+        return text
+    text = delete_image_captions(text)
+    # replace internal links
+    text, links = replaceInternalLinks(text)
+    return text, links
+
 
 
 # skip level 1, it is page name level
@@ -187,6 +205,17 @@ listClose = {'*': '</ul>', '#': '</ol>', ';': '</dl>', ':': '</dl>'}
 listItem = {'*': '<li>%s</li>', '#': '<li>%s</<li>', ';': '<dt>%s</dt>',
             ':': '<dd>%s</dd>'}
 
+def find_all_indexes(input_str, search_str):
+    l1 = []
+    length = len(input_str)
+    index = 0
+    while index < length:
+        i = input_str.find(search_str, index)
+        if i == -1:
+            return l1
+        l1.append(i)
+        index = i + 1
+    return l1
 
 def compact(text, mark_headers=False):
     """Deal with headers, lists, empty sections, residuals of tables.
@@ -422,7 +451,7 @@ def replaceExternalLinks(text):
 def makeExternalLink(url, anchor):
     """Function applied to wikiLinks"""
     if Extractor.keepLinks:
-        return '<a href="%s">%s</a>' % (urllib.quote(url.encode('utf-8')), anchor)
+        return '<a href="%s">%s</a>' % (urllib.parse.quote(url.encode('utf-8')), anchor)
     else:
         return anchor
 
@@ -453,6 +482,7 @@ def replaceInternalLinks(text):
     # triple closing ]]].
     cur = 0
     res = ''
+    links = []
     for s, e in findBalanced(text, ['[['], [']]']):
         m = tailRE.match(text, e)
         if m:
@@ -477,9 +507,15 @@ def replaceInternalLinks(text):
                     pipe = last  # advance
                 curp = e1
             label = inner[pipe + 1:].strip()
-        res += text[cur:s] + makeInternalLink(title, label) + trail
+        link = {}
+        link['wikidata'] = makeInternalLink(title, label)
+        link['boundaries'] = [len(res) + len(text[cur:s]),len(res) + len(text[cur:s])+len(label)]
+        link['title'] = title
+        link['label'] = label
+        res += text[cur:s] + label + trail
+        links.append(link)
         cur = end
-    return res + text[cur:]
+    return res + text[cur:], links
 
 
 def makeInternalLink(title, label):
@@ -492,9 +528,16 @@ def makeInternalLink(title, label):
         if colon2 > 1 and title[colon + 1:colon2] not in acceptedNamespaces:
             return ''
     if Extractor.keepLinks:
-        return '<a href="%s">%s</a>' % (urllib.quote(title), label)
+        # return '<a href="%s">%s</a>' % (mappings[title.lower()], label)
+        title = unescape(title).replace(" ", "_")
+        if len(title) == 0:
+            return ''
+        elif len(title) == 1:
+            return mapper.title_to_id(title[0].upper())
+        return mapper.title_to_id(title[0].upper() + title[1:])
+        # return '<a href="%s">%s</a>' % (urllib.parse.quote(title), label)
     else:
-        return label
+        return ''
 
 
 # ----------------------------------------------------------------------
@@ -809,7 +852,7 @@ class Extractor():
     # Whether to output text with HTML formatting elements in <doc> files.
     HtmlFormatting = False
 
-    def __init__(self, id, title, page):
+    def __init__(self, id, title, page, mapper_lan):
         """
         :param page: a list of lines.
         """
@@ -822,6 +865,8 @@ class Extractor():
         self.recursion_exceeded_2_errs = 0  # template recursion within expandTemplate()
         self.recursion_exceeded_3_errs = 0  # parameter recursion
         self.template_title_errs = 0
+        global mapper
+        mapper = mapper_lan
 
     def clean_text(self, text, mark_headers=False, expand_templates=False,
                    escape_doc=True):
@@ -837,11 +882,10 @@ class Extractor():
         self.magicWords['currenthour'] = time.strftime('%H')
         self.magicWords['currenttime'] = time.strftime('%H:%M:%S')
 
-        text = clean(self, text, expand_templates=expand_templates,
+        text, links = clean(self, text, self.title, expand_templates=expand_templates,
                      escape_doc=escape_doc)
-
-        text = compact(text, mark_headers=mark_headers)
-        return text
+        # text = compact(text, mark_headers=mark_headers)
+        return text, links
 
     def extract(self, out, escape_doc=True):
         """
@@ -851,16 +895,27 @@ class Extractor():
         text = ''.join(self.page)
 
         url = get_url(self.id)
-        header = '<doc id="%s" url="%s" title="%s">\n' % (self.id, url, self.title)
+        wikidata = mapper.title_to_id(unescape(self.title).replace(" ", "_")[0].upper() + unescape(self.title).replace(" ", "_")[1:])
+        header = "<doc id='%s' wikidata='%s' url='%s' title='%s'>\n" % (self.id, wikidata, url, escape_xml(self.title))
         # Separate header from text with a newline.
-        header += self.title + '\n\n'
-        footer = "\n</doc>\n"
+        #header += self.title + '\n\n'
+        footer = "</links>\n</doc>\n"
         out.write(header)
 
-        text = self.clean_text(text, escape_doc=escape_doc)
+        text, links = self.clean_text(text, escape_doc=escape_doc)
 
-        for line in text:
-            out.write(line)
+        for idx in find_all_indexes(text, self.title):
+            if idx not in [link['boundaries'][0] for link in links]:
+                links.append({'wikidata': wikidata, 'boundaries':[idx, idx+len(self.title)], 'title':escape_xml(self.title), 'label':escape_xml(self.title)})
+        # for line in text:
+        #     out.write(line)
+        #     out.write('\n')
+        out.write('<text>')
+        out.write(text)
+        out.write('</text><links>\n')
+        for link in links:
+            link = f"<link wikidata='{link['wikidata']}' start='{link['boundaries'][0]}' end='{link['boundaries'][1]}' title='{escape_xml(link['title'])}' label='{escape_xml(link['label'])}'/>"
+            out.write(link)
             out.write('\n')
         out.write(footer)
         errs = (self.template_title_errs,
@@ -1615,7 +1670,7 @@ parserFunctions = {
 
     # This function is used in some pages to construct links
     # http://meta.wikimedia.org/wiki/Help:URL
-    'urlencode': lambda string, *rest: urllib.quote(string.encode('utf-8')),
+    'urlencode': lambda string, *rest: urllib.parse.quote(string.encode('utf-8')),
 
     'lc': lambda string, *rest: string.lower() if string else '',
 
