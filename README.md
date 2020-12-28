@@ -44,6 +44,20 @@ The installer also installs two scripts for direct invocation:
 
 ## Usage
 
+### Wikimapper
+
+This extended version includes wikimapper to link entities to wikidata. 
+
+To download the wikidata db for the desired language, run:
+
+    wikimapper download enwiki-latest --dir data
+
+where enwiki-latest can be changed to other languages ie. itwiki-latest, eswiki-latest.
+
+After the download is compleated, run:
+
+  wikimapper create enwiki-latest --dumpdir data --target data/index_enwiki-latest.db
+
 ### Wikiextractor
 The script is invoked with a Wikipedia dump file as an argument:
 
