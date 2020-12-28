@@ -56,7 +56,7 @@ where enwiki-latest can be changed to other languages ie. itwiki-latest, eswiki-
 
 After the download is compleated, run:
 
-  wikimapper create enwiki-latest --dumpdir data --target data/index_enwiki-latest.db
+    wikimapper create enwiki-latest --dumpdir data --target data/index_enwiki-latest.db
 
 ### Wikiextractor
 The script is invoked with a Wikipedia dump file as an argument:

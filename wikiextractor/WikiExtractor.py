@@ -575,7 +575,7 @@ def main():
     if args.namespaces:
         acceptedNamespaces = set(args.namespaces.split(','))
 
-    mapper = WikiMapper(f"index_{args.language}wiki-latest.db")
+    mapper = WikiMapper(f"data/data_{args.language}/index_{args.language}wiki-latest.db")
 
     FORMAT = '%(levelname)s: %(message)s'
     logging.basicConfig(format=FORMAT)
