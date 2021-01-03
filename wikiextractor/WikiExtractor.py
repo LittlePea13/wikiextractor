@@ -442,6 +442,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     reduce.join()
 
     if output != sys.stdout:
+        # add </data>
         output.close()
     extract_duration = default_timer() - extract_start
     extract_rate = ordinal / extract_duration
@@ -575,7 +576,7 @@ def main():
     if args.namespaces:
         acceptedNamespaces = set(args.namespaces.split(','))
 
-    mapper = WikiMapper(f"data/data_{args.language}/index_{args.language}wiki-latest.db")
+    mapper = WikiMapper(f"data/{args.language}/index_{args.language}wiki-latest.db")
 
     FORMAT = '%(levelname)s: %(message)s'
     logging.basicConfig(format=FORMAT)
