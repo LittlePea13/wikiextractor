@@ -911,7 +911,7 @@ class Extractor():
         #     out.write(line)
         #     out.write('\n')
         out.write('<text>')
-        out.write(text)
+        out.write(text.rstrip('\n'))
         out.write('</text><links>\n')
         for link in links:
             link = f"<link wikidata='{link['wikidata']}' start='{link['boundaries'][0]}' end='{link['boundaries'][1]}' title='{escape_xml(link['title'])}' label='{escape_xml(link['label'])}'/>"
