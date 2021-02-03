@@ -149,13 +149,17 @@ def clean(extractor, text, title, expand_templates=False, escape_doc=True):
             spans.append((m.start(), m.end()))
         for m in right.finditer(text):
             spans.append((m.start(), m.end()))
-
+    # for tag in ['File', 'Image']:
+    for m in re.finditer(r'\[\[\b[A-z]*\:(?:[^\]\[]|\[(?:[^\]\[]|\[[^\]\[]*\])*\])*\]\]', text, re.MULTILINE):
+        spans.append((m.start(), m.end()))
     # Bulk remove all spans
     text = dropSpans(spans, text)
-
     # Drop discarded elements
     for tag in discardElements:
         text = dropNested(text, r'<\s*%s\b[^>/]*>' % tag, r'<\s*/\s*%s>' % tag)
+    # Drop images and files elements
+    # for tag in ['File', 'Image']:
+    #     text = dropNested(text, r'\[\[\s*%s' % tag, r'\]\]')
 
     if not extractor.HtmlFormatting:
         # Turn into text what is left (&amp;nbsp;) and <syntaxhighlight>
@@ -190,7 +194,7 @@ def clean(extractor, text, title, expand_templates=False, escape_doc=True):
             text = '\n'.join(sentences[1:])
             return delete_image_captions(text)
         return text
-    text = delete_image_captions(text)
+    # text = delete_image_captions(text)
     # replace internal links
     text, links = replaceInternalLinks(text)
     return text, links

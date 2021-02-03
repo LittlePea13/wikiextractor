@@ -160,18 +160,21 @@ class OutputSplitter():
         self.compress = compress
         self.max_file_size = max_file_size
         self.file = self.open(self.nextFile.next())
+        self.file.write('<data>')
 
     def reserve(self, size):
         if self.file.tell() + size > self.max_file_size:
-            self.file.write('</data>')
+            # self.file.write('</data>')
             self.close()
             self.file = self.open(self.nextFile.next())
+            self.file.write('<data>')
+
     def write(self, data):
         self.reserve(len(data))
         self.file.write(data)
 
     def close(self):
-        # self.file.write('</data>')
+        self.file.write('</data>')
         self.file.close()
 
     def open(self, filename):
@@ -179,7 +182,6 @@ class OutputSplitter():
             return bz2.BZ2File(filename + '.bz2', 'w')
         else:
             f = open(filename, 'w')
-            f.write('<data>')
             return f
 
 
@@ -250,7 +252,7 @@ def load_templates(file, output_file=None):
                 output.write('   <ns>10</ns>\n')
                 output.write('   <text>')
                 for line in page:
-                    output.write(line.encode('utf-8'))
+                    output.write(line)#.encode('utf-8'))
                 output.write('   </text>\n')
                 output.write('</page>\n')
             page = []
@@ -386,9 +388,16 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     for line in input:
         #line = line.decode('utf-8')
         if '<' not in line:  # faster than doing re.search()
-            if line[0:2] == '==':
+            if line.startswith('=='):
                 inText = False
             if inText:
+                # if line.startswith('[[File') or line.startswith('[[Image'):
+                #     # matched = re.search('\[\[(?:[^\]\[]|\[(?:[^\]\[]|\[[^\]\[]*\])*\])*\]\]', line)
+                #     # # print(line)
+                #     # # print(matched.group())
+                #     # # print(str(matched.group())== str(line.rstrip('\n')))
+                #     # if matched and str(matched.group())== str(line.rstrip('\n')):
+                #     continue
                 page.append(line)
             continue 
         m = tagRE.search(line)
@@ -443,6 +452,7 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
 
     if output != sys.stdout:
         # add </data>
+        # output.write('</data>')
         output.close()
     extract_duration = default_timer() - extract_start
     extract_rate = ordinal / extract_duration
