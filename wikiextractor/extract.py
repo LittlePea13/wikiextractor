@@ -184,8 +184,6 @@ def clean(extractor, text, title, expand_templates=False, escape_doc=True):
     text = re.sub(u'(\[\(«) ', r'\1', text)
     text = re.sub(r'\n\W+?\n', '\n', text, flags=re.U)  # lines with only punctuations
     text = text.replace(',,', ',').replace(',.', '.')
-    if escape_doc:
-        text = html.escape(text, quote=False)
 
     text = text.lstrip()
     def delete_image_captions(text):
@@ -197,6 +195,12 @@ def clean(extractor, text, title, expand_templates=False, escape_doc=True):
     # text = delete_image_captions(text)
     # replace internal links
     text, links = replaceInternalLinks(text)
+    wikidata = mapper.title_to_id(unescape(title).replace(" ", "_")[0].upper() + unescape(title).replace(" ", "_")[1:])
+    for idx in find_all_indexes(text, title):
+        if idx not in [link['boundaries'][0] for link in links]:
+            links.append({'wikidata': wikidata, 'boundaries':[idx, idx+len(title)], 'title':html.escape(title, quote=True), 'label':html.escape(title, quote=True)})
+    if escape_doc:
+        text = html.escape(text, quote=True)
     return text, links
 
 
@@ -454,14 +458,14 @@ def replaceExternalLinks(text):
 
 def makeExternalLink(url, anchor):
     """Function applied to wikiLinks"""
-    if Extractor.keepLinks:
+    if False:
         return '<a href="%s">%s</a>' % (urllib.parse.quote(url.encode('utf-8')), anchor)
     else:
         return anchor
 
 
 def makeExternalImage(url, alt=''):
-    if Extractor.keepLinks:
+    if False:
         return '<img src="%s" alt="%s">' % (url, alt)
     else:
         return alt
@@ -514,8 +518,8 @@ def replaceInternalLinks(text):
         link = {}
         link['wikidata'] = makeInternalLink(title, label)
         link['boundaries'] = [len(res) + len(text[cur:s]),len(res) + len(text[cur:s])+len(label)]
-        link['title'] = title
-        link['label'] = label
+        link['title'] = html.escape(title, quote=True)
+        link['label'] = html.escape(label, quote=True)
         res += text[cur:s] + label + trail
         links.append(link)
         cur = end
@@ -900,7 +904,7 @@ class Extractor():
 
         url = get_url(self.id)
         wikidata = mapper.title_to_id(unescape(self.title).replace(" ", "_")[0].upper() + unescape(self.title).replace(" ", "_")[1:])
-        header = "<doc id='%s' wikidata='%s' url='%s' title='%s'>\n" % (self.id, wikidata, url, escape_xml(self.title))
+        header = f'<doc id="{self.id}" wikidata="{wikidata}" url="{url}" title="{self.title}">\n'
         # Separate header from text with a newline.
         #header += self.title + '\n\n'
         footer = "</links>\n</doc>\n"
@@ -908,9 +912,9 @@ class Extractor():
 
         text, links = self.clean_text(text, escape_doc=escape_doc)
 
-        for idx in find_all_indexes(text, self.title):
-            if idx not in [link['boundaries'][0] for link in links]:
-                links.append({'wikidata': wikidata, 'boundaries':[idx, idx+len(self.title)], 'title':escape_xml(self.title), 'label':escape_xml(self.title)})
+        # for idx in find_all_indexes(text, self.title):
+        #     if idx not in [link['boundaries'][0] for link in links]:
+        #         links.append({'wikidata': wikidata, 'boundaries':[idx, idx+len(self.title)], 'title':html.escape(self.title, quote=True), 'label':html.escape(self.title, quote=True)})
         # for line in text:
         #     out.write(line)
         #     out.write('\n')
@@ -918,7 +922,7 @@ class Extractor():
         out.write(text.rstrip('\n'))
         out.write('</text><links>\n')
         for link in links:
-            link = f"<link wikidata='{link['wikidata']}' start='{link['boundaries'][0]}' end='{link['boundaries'][1]}' title='{escape_xml(link['title'])}' label='{escape_xml(link['label'])}'/>"
+            link = f'<link wikidata="{link["wikidata"]}" start="{link["boundaries"][0]}" end="{link["boundaries"][1]}" title="{link["title"]}" label="{link["label"]}"/>'
             out.write(link)
             out.write('\n')
         out.write(footer)
