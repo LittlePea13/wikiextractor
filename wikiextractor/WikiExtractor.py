@@ -386,10 +386,15 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
     inText = False
     redirect = False
     for line in input:
+        # print(line)
         #line = line.decode('utf-8')
+        if line.count("[[Cat") > 0:
+            # print(line)
+            line = line.replace('[[Categoria', '[[Categoria2')
+            line = line.replace('[[Category', '[[Category2')
         if '<' not in line:  # faster than doing re.search()
-            if line.startswith('=='):
-                inText = False
+            # if line.startswith('=='): # Uncomment this for only abstract
+            #     inText = False
             if inText:
                 # if line.startswith('[[File') or line.startswith('[[Image'):
                 #     # matched = re.search('\[\[(?:[^\]\[]|\[(?:[^\]\[]|\[[^\]\[]*\])*\])*\]\]', line)
@@ -401,9 +406,11 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
                 page.append(line)
             continue 
         m = tagRE.search(line)
+        category = ''
         if not m:
             continue
         tag = m.group(2)
+        # print(tag)
         if tag == 'page':
             page = []
             redirect = False
@@ -418,10 +425,18 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
             line = line[m.start(3):m.end(3)]
             page.append(line)
             if m.lastindex == 4:  # open-close
+                # print('other one', line)
                 inText = False
         elif tag == '/text':
-            if m.group(1) and not m.group(1).startswith('[[') and not m.group(1).endswith(']]'):
+            if m.group(1) and (not m.group(1).startswith('[[') and not m.group(1).endswith(']]')) or m.group(1).startswith('[[Cat'):
                 page.append(m.group(1))
+                # print(m.group(1))
+            # else:
+            #     if not redirect:
+            #         print(title)
+            #         print(line)
+            # print(title)
+            # print(m.group(1))
             inText = False
         elif inText:
             page.append(line)
