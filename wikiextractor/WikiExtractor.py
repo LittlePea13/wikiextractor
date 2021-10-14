@@ -393,8 +393,8 @@ def process_dump(input_file, template_file, out_file, file_size, file_compress,
             line = line.replace('[[Categoria', '[[Categoria2')
             line = line.replace('[[Category', '[[Category2')
         if '<' not in line:  # faster than doing re.search()
-            # if line.startswith('=='): # Uncomment this for only abstract
-            #     inText = False
+            if line.startswith('=='): # Extract only abstract, uncomment if you want to extract the whole page
+                inText = False
             if inText:
                 # if line.startswith('[[File') or line.startswith('[[Image'):
                 #     # matched = re.search('\[\[(?:[^\]\[]|\[(?:[^\]\[]|\[[^\]\[]*\])*\])*\]\]', line)
