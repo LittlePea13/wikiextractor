@@ -301,8 +301,8 @@ def collect_pages(text):
     for line in text:
         #line = line.decode('utf-8')
         if '<' not in line:  # faster than doing re.search()
-            # if line.startswith('=='): # if only want openings
-            #     inText = False
+            if line.startswith('=='): # if only want openings
+                inText = False
             if inText:
                 # if line.startswith('[[File') or line.startswith('[[Image'):
                 #     # matched = re.search('\[\[(?:[^\]\[]|\[(?:[^\]\[]|\[[^\]\[]*\])*\])*\]\]', line)

@@ -520,11 +520,21 @@ def replaceInternalLinks(text):
                 curp = e1
             label = inner[pipe + 1:].strip()
         link = {}
-        link['wikidata'] = makeInternalLink(title, label)
-        link['boundaries'] = [len(res) + len(text[cur:s]),len(res) + len(text[cur:s])+len(label)]
-        link['title'] = html.escape(title, quote=True)
-        link['label'] = html.escape(label, quote=True)
-        res += text[cur:s] + label + trail
+
+        if title.count(':') == 1 and title.startswith('Cat'):
+            # print(title)
+            # link['wikidata'] = makeInternalLink(title, label)
+            title = title.split(':')[-1]
+            label = label.split(':')[-1]
+            link['boundaries'] = [len(res) + len(text[cur:s]),len(res) + len(text[cur:s])+len(label)]
+            link['category'] = html.escape(title, quote=True)
+            link['label'] = html.escape(label, quote=True)
+        else:
+            link['wikidata'] = makeInternalLink(title, label)
+            link['boundaries'] = [len(res) + len(text[cur:s]),len(res) + len(text[cur:s])+len(label)]
+            link['title'] = html.escape(title, quote=True)
+            link['label'] = html.escape(label, quote=True)
+            res += text[cur:s] + label + trail
         links.append(link)
         cur = end
     return res + text[cur:], links
@@ -532,7 +542,7 @@ def replaceInternalLinks(text):
 
 def makeInternalLink(title, label):
     colon = title.find(':')
-    if colon > 0 and title[:colon] not in acceptedNamespaces:
+    if colon > 0 and title[:colon] not in acceptedNamespaces:# and not title[:colon].startswith('Cat'):
         return ''
     if colon == 0:
         # drop also :File:
@@ -1030,7 +1040,8 @@ class Extractor():
                 'url': url,
                 'title': self.title,
                 'text': text,
-                'links': links
+                'links': [link for link in links if 'category' not in link],
+                'categories': [link for link in links if 'category' in link]
             }
             out_str = json.dumps(json_data)
             out.write(out_str)
@@ -1039,7 +1050,7 @@ class Extractor():
             header = f'<doc id="{self.id}" wikidata="{wikidata}" url="{url}" title="{self.title}">\n'
             # Separate header from text with a newline.
             #header += self.title + '\n\n'
-            footer = "</links>\n</doc>\n"
+            footer = "</doc>\n"
             out.write(header)
 
 
@@ -1052,11 +1063,22 @@ class Extractor():
             out.write('<text>')
             out.write(text.rstrip('\n'))
             out.write('</text><links>\n')
-            for link in links:
+            categories = []
+        for link in links:
+            if 'category' in link:
+                categories.append(f'<category title="{link["category"]}" label="{link["label"]}"/>')
+            else:
                 link = f'<link wikidata="{link["wikidata"]}" start="{link["boundaries"][0]}" end="{link["boundaries"][1]}" title="{link["title"]}" label="{link["label"]}"/>'
                 out.write(link)
                 out.write('\n')
-            out.write(footer)
+        out.write('</links>\n')
+        if len(categories) > 0:
+            out.write('<categories>\n')
+            for cat in categories:
+                out.write(cat)
+                out.write('\n')
+            out.write('</categories>\n')
+        out.write(footer)
         errs = (self.template_title_errs,
                 self.recursion_exceeded_1_errs,
                 self.recursion_exceeded_2_errs,
