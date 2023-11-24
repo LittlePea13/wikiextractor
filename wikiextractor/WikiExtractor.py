@@ -301,8 +301,8 @@ def collect_pages(text):
     for line in text:
         #line = line.decode('utf-8')
         if '<' not in line:  # faster than doing re.search()
-            if line.startswith('=='): # if only want openings
-                inText = False
+            # if line.startswith('=='): # if only want openings
+            #     inText = False
             if inText:
                 # if line.startswith('[[File') or line.startswith('[[Image'):
                 #     # matched = re.search('\[\[(?:[^\]\[]|\[(?:[^\]\[]|\[[^\]\[]*\])*\])*\]\]', line)
@@ -497,30 +497,6 @@ def process_dump_cirrus(input_file, template_file, out_file, file_size, file_com
     global templateNamespace
     global moduleNamespace, modulePrefix
     input = decode_open(input_file)
-
-    # # collect siteinfo
-    # for line in input:
-    #     line = line #.decode('utf-8')
-    #     m = tagRE.search(line)
-    #     if not m:
-    #         continue
-    #     tag = m.group(2)
-    #     if tag == 'base':
-    #         # discover urlbase from the xml dump file
-    #         # /mediawiki/siteinfo/base
-    #         base = m.group(3)
-    #         urlbase = base[:base.rfind("/")]
-    #     elif tag == 'namespace':
-    #         knownNamespaces.add(m.group(3))
-    #         if re.search('key="10"', line):
-    #             templateNamespace = m.group(3)
-    #             Extractor.templatePrefix = templateNamespace + ':'
-    #         elif re.search('key="828"', line):
-    #             moduleNamespace = m.group(3)
-    #             modulePrefix = moduleNamespace + ':'
-    #     elif tag == '/siteinfo':
-    #         break
-
     if expand_templates:
         # preprocess
         template_load_start = default_timer()
@@ -569,7 +545,7 @@ def process_dump_cirrus(input_file, template_file, out_file, file_size, file_com
     workers = []
     for _ in range(max(1, process_count)):
         extractor = Process(target=extract_process,
-                            args=(jobs_queue, output_queue, escape_doc))
+                            args=(jobs_queue, output_queue, expand_templates, escape_doc))
         extractor.daemon = True  # only live while parent process lives
         extractor.start()
         workers.append(extractor)
@@ -633,7 +609,7 @@ def process_dump_cirrus(input_file, template_file, out_file, file_size, file_com
 # Multiprocess support
 
 
-def extract_process(jobs_queue, output_queue, escape_doc):
+def extract_process(jobs_queue, output_queue, expand_templates, escape_doc):
     """Pull tuples of raw page content, do CPU/regex-heavy fixup, push finished text
     :param jobs_queue: where to get jobs.
     :param output_queue: where to queue extracted text for output.
@@ -642,7 +618,7 @@ def extract_process(jobs_queue, output_queue, escape_doc):
         job = jobs_queue.get()  # job is (id, title, page, ordinal)
         if job:
             out = StringIO()  # memory buffer
-            Extractor(*job[:4]).extract(out, escape_doc)  # (id, title, page)
+            Extractor(*job[:4]).extract(out, expand_templates, escape_doc)  # (id, title, page)
             text = out.getvalue()
             output_queue.put((job[4], text))  # (ordinal, extracted_text)
             out.close()
@@ -806,10 +782,10 @@ def main():
 
     if 'cirrus' in input_file:
         process_dump_cirrus(input_file, args.templates, output_path, file_size,
-                    args.compress, args.processes, args.escape_doc, not args.no_templates)
+                    args.compress, args.processes, args.escape_doc==True, not args.no_templates)
     else:
         process_dump(input_file, args.templates, output_path, file_size,
-                    args.compress, args.processes, args.escape_doc, not args.no_templates)
+                    args.compress, args.processes, args.escape_doc==True, not args.no_templates)
 
 
 if __name__ == '__main__':

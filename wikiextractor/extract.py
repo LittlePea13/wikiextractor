@@ -51,6 +51,7 @@ urlbase = ''
 # We include as default Template, when loading external template file.
 knownNamespaces = set(['Template'])
 
+
 ##
 # Drop these elements from article text
 #
@@ -78,7 +79,7 @@ def get_url(uid):
 # ======================================================================
 
 
-def clean(extractor, text, title, expand_templates=False, escape_doc=True):
+def clean(extractor, text, title, expand_templates=False, escape_doc=False):
     """
     Transforms wiki markup. If the command line flag --escapedoc is set then the text is also escaped
     @see https://www.mediawiki.org/wiki/Help:Formatting
@@ -88,7 +89,6 @@ def clean(extractor, text, title, expand_templates=False, escape_doc=True):
     :param escape_doc: whether to convert special characters to HTML entities.
     @return: the cleaned text.
     """
-
     if expand_templates:
         # expand templates
         # See: http://www.mediawiki.org/wiki/Help:Templates
@@ -127,15 +127,17 @@ def clean(extractor, text, title, expand_templates=False, escape_doc=True):
         text = italic.sub(r'<i>\1</i>', text)
     else:
         text = bold_italic.sub(r'\1', text)
-        #text = bold.sub(fr'[[{title}|\1]]', text)
+        # apply only to first text before '=='
+        opening = text.find('==')
+        if opening > 0:
+            text = bold.sub(fr'[[{title}|\1]]', text[:opening]) + text[opening:]
+        # text = bold.sub(fr'[[{title}|\1]]', text)
         text = bold.sub(r'\1', text)
         text = italic_quote.sub(r'"\1"', text)
         text = italic.sub(r'"\1"', text)
         text = quote_quote.sub(r'"\1"', text)
     # residuals of unbalanced quotes
     text = text.replace("'''", '').replace("''", '"')
-
-    # Collect spans
 
     spans = []
     # Drop HTML comments
@@ -146,13 +148,13 @@ def clean(extractor, text, title, expand_templates=False, escape_doc=True):
     for pattern in selfClosing_tag_patterns:
         for m in pattern.finditer(text):
             spans.append((m.start(), m.end()))
-
     # Drop ignored tags
     for left, right in ignored_tag_patterns:
         for m in left.finditer(text):
             spans.append((m.start(), m.end()))
         for m in right.finditer(text):
             spans.append((m.start(), m.end()))
+
     # for tag in ['File', 'Image']:
     for m in re.finditer(r'\[\[\b[A-z]*\:(?:[^\]\[]|\[(?:[^\]\[]|\[[^\]\[]*\])*\])*\]\]', text, re.MULTILINE):
         spans.append((m.start(), m.end()))
@@ -198,13 +200,15 @@ def clean(extractor, text, title, expand_templates=False, escape_doc=True):
         return text
     # text = delete_image_captions(text)
     # replace internal links
-    text, links = replaceInternalLinks(text)
-    wikidata = mapper.title_to_id(unescape(title).replace(" ", "_")[0].upper() + unescape(title).replace(" ", "_")[1:])
-    for idx in find_all_indexes(text, title):
-        if idx not in [link['boundaries'][0] for link in links]:
-            links.append({'wikidata': wikidata, 'boundaries':[idx, idx+len(title)], 'title':html.escape(title, quote=True), 'label':html.escape(title, quote=True)})
     if escape_doc:
         text = html.escape(text, quote=True)
+    text, links = replaceInternalLinks(text)
+    if False: #add_title_to_links:
+        wikidata = mapper.title_to_id(unescape(title).replace(" ", "_")[0].upper() + unescape(title).replace(" ", "_")[1:])
+        for idx in find_all_indexes(text, title):
+            if idx not in [link['boundaries'][0] for link in links]:
+                links.append({'wikidata': wikidata, 'boundaries':[idx, idx+len(title)], 'title':html.escape(title, quote=True), 'label':html.escape(title, quote=True)})
+
     return text, links
 
 
@@ -733,6 +737,10 @@ ignoredTags = (
     'p', 'plaintext', 's', 'span', 'strike', 'strong',
     'sub', 'sup', 'tt', 'u', 'var'
 )
+# These tags are dropped, including their content.
+ignoredTags_ = (
+    'div'
+)
 
 placeholder_tags = {'math': 'formula', 'code': 'codice'}
 
@@ -807,6 +815,9 @@ comment = re.compile(r'<!--.*?-->', re.DOTALL)
 # Match ignored tags
 ignored_tag_patterns = []
 
+# Match ignored tags
+ignored_tag_patterns_ = []
+
 
 def ignoreTag(tag):
     left = re.compile(r'<%s\b.*?>' % tag, re.IGNORECASE | re.DOTALL)  # both <ref> and <reference>
@@ -814,13 +825,17 @@ def ignoreTag(tag):
     ignored_tag_patterns.append((left, right))
 
 
+
 def resetIgnoredTags():
     global ignored_tag_patterns
+    global ignored_tag_patterns_
     ignored_tag_patterns = []
+    ignored_tag_patterns_ = []
 
 
 for tag in ignoredTags:
     ignoreTag(tag)
+
 
 # Match selfClosing HTML tags
 selfClosing_tag_patterns = [
@@ -1005,7 +1020,7 @@ class Extractor():
         mapper = mapper_lan
 
     def clean_text(self, text, mark_headers=False, expand_templates=True,
-                   escape_doc=True):
+                   escape_doc=False):
         """
         :param mark_headers: True to distinguish headers from paragraphs
           e.g. "## Section 1"
@@ -1024,13 +1039,13 @@ class Extractor():
         # text = compact(text, mark_headers=mark_headers)
         return text, links
 
-    def extract(self, out, escape_doc=True):
+    def extract(self, out, expand_templates=True, escape_doc=False):
         """
         :param out: a memory file.
         """
         logging.debug("%s\t%s", self.id, self.title)
         text = ''.join(self.page)
-        text, links = self.clean_text(text, escape_doc=escape_doc)
+        text, links = self.clean_text(text, expand_templates=expand_templates, escape_doc=escape_doc)
         url = get_url(self.id)
         wikidata = mapper.title_to_id(unescape(self.title).replace(" ", "_")[0].upper() + unescape(self.title).replace(" ", "_")[1:])
         if self.to_json:
@@ -1064,21 +1079,21 @@ class Extractor():
             out.write(text.rstrip('\n'))
             out.write('</text><links>\n')
             categories = []
-        for link in links:
-            if 'category' in link:
-                categories.append(f'<category title="{link["category"]}" label="{link["label"]}"/>')
-            else:
-                link = f'<link wikidata="{link["wikidata"]}" start="{link["boundaries"][0]}" end="{link["boundaries"][1]}" title="{link["title"]}" label="{link["label"]}"/>'
-                out.write(link)
-                out.write('\n')
-        out.write('</links>\n')
-        if len(categories) > 0:
-            out.write('<categories>\n')
-            for cat in categories:
-                out.write(cat)
-                out.write('\n')
-            out.write('</categories>\n')
-        out.write(footer)
+            for link in links:
+                if 'category' in link:
+                    categories.append(f'<category title="{link["category"]}" label="{link["label"]}"/>')
+                else:
+                    link = f'<link wikidata="{link["wikidata"]}" start="{link["boundaries"][0]}" end="{link["boundaries"][1]}" title="{link["title"]}" label="{link["label"]}"/>'
+                    out.write(link)
+                    out.write('\n')
+            out.write('</links>\n')
+            if len(categories) > 0:
+                out.write('<categories>\n')
+                for cat in categories:
+                    out.write(cat)
+                    out.write('\n')
+                out.write('</categories>\n')
+            out.write(footer)
         errs = (self.template_title_errs,
                 self.recursion_exceeded_1_errs,
                 self.recursion_exceeded_2_errs,
@@ -1180,7 +1195,7 @@ class Extractor():
             # The '=' might occurr within an HTML attribute:
             #   "&lt;ref name=value"
             # but we stop at first.
-            m = re.match(' *([^=]*?) *=(.*)', param, re.DOTALL)
+            m = re.match(" *([^=']*?) *=(.*)", param, re.DOTALL)
             if m:
                 # This is a named parameter.  This case also handles parameter
                 # assignments like "2=xxx", where the number of an unnamed
@@ -1356,6 +1371,8 @@ class Extractor():
         value = self.expandTemplates(instantiated)
         self.frame.pop()
         # logging.debug('   INVOCATION> %s %d %s', title, len(self.frame), value)
+        if title == "b'Template:Short description'":
+            return ''
         return value
 
 
@@ -1641,7 +1658,7 @@ def fullyQualifiedTemplateTitle(templateTitle):
     # space]], but having in the system a redirect page with an empty title
     # causes numerous problems, so we'll live happier without it.
     if templateTitle:
-        return Extractor.templatePrefix + ucfirst(templateTitle)
+        return Extractor.templatePrefix + ucfirst(templateTitle) + "'"
     else:
         return ''  # caller may log as error
 
@@ -1861,11 +1878,11 @@ def callParserFunction(functionName, args, frame):
         if functionName == '#invoke':
             # special handling of frame
             ret = sharp_invoke(args[0].strip(), args[1].strip(), frame)
-            # logging.debug('parserFunction> %s %s', functionName, ret)
+            # logging.debug('parserFunction> %s %s', args[1], ret)
             return ret
         if functionName in parserFunctions:
             ret = parserFunctions[functionName](*args)
-            # logging.debug('parserFunction> %s %s', functionName, ret)
+            # logging.debug('parserFunction> %s(%s) %s', functionName, args, ret)
             return ret
     except:
         return ""  # FIXME: fix errors
@@ -1879,7 +1896,7 @@ def callParserFunction(functionName, args, frame):
 reNoinclude = re.compile(r'<noinclude>(?:.*?)</noinclude>', re.DOTALL)
 reIncludeonly = re.compile(r'<includeonly>|</includeonly>', re.DOTALL)
 
-# These are built before spawning processes, hence thay are shared.
+# These are built before spawning processes, hence they are shared.
 templates = {}
 redirects = {}
 # cache of parser templates
